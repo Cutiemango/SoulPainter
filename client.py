@@ -1,10 +1,14 @@
 import socket
 import threading
 import pygame
+from queue import Queue
 
 HOST = '127.0.0.1'
 PORT = 8000
 SCREEN_WIDTH, SCREEN_HEIGHT = 960, 770
+
+game_msg_queue = Queue()
+chat_msg_queue = Queue()
 
 
 def threaded_client(conn):
