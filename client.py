@@ -1,6 +1,6 @@
 import socket
 import threading
-import pygame
+import game
 from queue import Queue
 
 HOST = '127.0.0.1'
@@ -16,7 +16,11 @@ def threaded_client(conn):
         try:
             msg = str(conn.recv(1024), encoding='utf-8')
             if msg:
-                print(msg)
+                print(f"[From server {(HOST, PORT)}]: {msg}")
+                if msg.startswith("G"):
+                    for packet in msg.split("@"):
+                        if len(packet) == 0: continue
+                        game_msg_queue.put(packet[2:])
             else:
                 break
         except Exception as e:
@@ -26,29 +30,8 @@ def threaded_client(conn):
     print(f"[Client] Disconnected from server")
 
 
-def draw_circle(screen, x, y):
-    pygame.draw.circle(screen, (0, 0, 255), (x, y), 5)
-
-
 def game_thread(conn):
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    isPressed = False
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                isPressed = True
-            elif event.type == pygame.MOUSEBUTTONUP:
-                isPressed = False
-            elif event.type == pygame.MOUSEMOTION and isPressed is True:
-                isPressed = True
-                (x, y) = pygame.mouse.get_pos()  # returns the position of mouse cursor
-                draw_circle(screen, x, y)
-                conn.sendall(f"Clicked: {(x, y)}".encode())
-            elif event.type == pygame.QUIT:
-                pygame.quit()
-                conn.close()
-                return
-        pygame.display.flip()
+    game.main(game_msg_queue, conn)
 
 
 def connect(host, port):
@@ -71,9 +54,9 @@ def main():
     chat = threading.Thread(target=threaded_client, args=[conn])
     chat.start()
 
-    game = threading.Thread(target=game_thread, args=[conn])
-    game.start()
-    game.join()
+    game_thr = threading.Thread(target=game_thread, args=[conn])
+    game_thr.start()
+    game_thr.join()
     chat.join()
     # try:
     #     while True:
