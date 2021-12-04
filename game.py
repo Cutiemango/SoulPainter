@@ -1,5 +1,6 @@
 import pygame
 import colorsys
+import sys
 from queue import Queue
 from enum import IntEnum
 
@@ -317,36 +318,44 @@ def init_variables():
     game_variables["brush_size"] = 3
     game_variables["eraser_size"] = 3
     game_variables["locked"] = False
-    game_variables["timer"] = 9999
+    game_variables["timer"] = 0
+    game_variables['timer_text'] = "Waiting for players"
 
 
-def send_packet(conn, pos, color, tool_size):
-    x, y = pos
-    color_str = ",".join([str(_) for _ in color[:3]])
-    content = f"G PAINT,{x},{y},{color_str},{tool_size}@"
-    conn.sendall(content.encode())
+def send_packet(conn, pkt_name, **payload):
+    packet = ""
+    if pkt_name == "PAINT":
+        x, y = payload["pos"]
+        color_str = ",".join([str(_) for _ in payload["color"][:3]])
+        packet = f"{pkt_name},{x},{y},{color_str},{payload['tool_size']}"
+    elif pkt_name == "TIME_UP":
+        packet = f"{pkt_name},"
+    conn.sendall(f"G,{packet}@".encode())
 
 
-def decode_message(msg, screen):
-    if msg == "CLEAR":
+def decode_packet(conn, screen, pkt_type, payload):
+    if pkt_type == "CLEAR":
         display["grid"].clean()
-    elif msg.startswith("PAINT"):
-        s = msg.split(",")
-        paint((int(s[1]), int(s[2])), (int(s[3]), int(s[4]), int(s[5])), int(s[6]))
-    elif msg == "LOCK":
+    elif pkt_type == "PAINT":
+        s = payload.split(",")
+        paint((int(s[0]), int(s[1])), (int(s[2]), int(s[3]), int(s[4])), int(s[5]))
+    elif pkt_type == "LOCK":
         game_variables["locked"] = True
-    elif msg == "TURN":
+    elif pkt_type == "TURN":
         game_variables["locked"] = False
         draw_toolbar(screen)
+    elif pkt_type == "TIME":
+        s = payload.split(",")
+        game_variables["timer_text"] = s[0]
+        game_variables["timer"] = int(s[1])
         start_counter()
 
 
 def start_counter():
-    game_variables["timer"] = 60
     pygame.time.set_timer(TIMER_EVENT, 1000)
 
 
-def update_tools(screen):
+def draw_tools(screen):
     tool_activate()
     pygame.draw.rect(screen, (180, 180, 180), (860, 50, 120, 100))
     for idx, tool in tools.items():
@@ -356,9 +365,19 @@ def update_tools(screen):
         screen.blit(pygame.transform.scale(tool.icon, (22, 22)), (button.pos[0] + 3, button.pos[1] + 3))
 
 
-def update_sliders(screen):
+def draw_sliders(screen):
     for slider in sliders.values():
         slider.draw(screen)
+
+
+def draw_counter(screen):
+    toolbar_font = pygame.font.SysFont("Consolas", 20)
+    pygame.draw.rect(screen, (150, 150, 150), (820, 700, SCREEN_WIDTH - 830, SCREEN_HEIGHT - 710))
+    timer_text = game_variables['timer_text']
+    if game_variables['timer'] > 0:
+        timer_text += f": {game_variables['timer']}"
+
+    screen.blit(toolbar_font.render(timer_text, True, (50, 50, 50)), (820, 700))
 
 
 def draw_toolbar(screen):
@@ -369,10 +388,10 @@ def draw_toolbar(screen):
     draw_palette(screen)
 
     screen.blit(toolbar_font.render("Tools", True, (50, 50, 50)), (780, 20))
-    update_tools(screen)
+    draw_tools(screen)
 
     screen.blit(toolbar_font.render("Size Settings", True, (50, 50, 50)), (780, 170))
-    update_sliders(screen)
+    draw_sliders(screen)
     screen.blit(toolbar_font.render("Colors", True, (50, 50, 50)), (780, 300))
 
 
@@ -391,13 +410,16 @@ def main(msg_queue, conn):
     cell_count = grid.cell_count
     cell_size = grid.cell_size
 
-    toolbar_font = pygame.font.SysFont("Consolas", 20)
     draw_toolbar(screen)
 
     while True:
+        if conn is not None and conn.fileno() == -1:
+            pygame.quit()
+            return
         while not msg_queue.empty():
             msg = msg_queue.get()
-            decode_message(msg, screen)
+            data = msg.split(",", 1)
+            decode_packet(conn, screen, data[0], data[1] if len(data) > 1 else None)
         clock.tick(MAX_FPS)
         if game_variables["locked"]:
             for event in pygame.event.get():
@@ -405,8 +427,14 @@ def main(msg_queue, conn):
                     pygame.quit()
                     if conn: conn.close()
                     return
+                elif event.type == TIMER_EVENT:
+                    if game_variables["timer"] == 0:
+                        pygame.time.set_timer(TIMER_EVENT, 0)
+                    else:
+                        game_variables["timer"] -= 1
             screen.fill((255, 255, 255))
             draw_walls(screen)
+            draw_counter(screen)
             pygame.mouse.set_visible(True)
             grid.draw(screen)
             pygame.display.update()
@@ -423,7 +451,6 @@ def main(msg_queue, conn):
             elif event.type == TIMER_EVENT:
                 if game_variables["timer"] == 0:
                     pygame.time.set_timer(TIMER_EVENT, 0)
-                    conn.sendall(f"G TIME_UP".encode())
                 else:
                     game_variables["timer"] -= 1
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -431,14 +458,14 @@ def main(msg_queue, conn):
                     game_variables["previous_tool"] = cur_tool
                     game_variables["current_tool"] = ToolType.ERASER_TOOL
                     switch_tool()
-                    update_sliders(screen)
+                    draw_sliders(screen)
                 elif event.button == 1:  # left click
                     if is_within_grid(cursorX, cursorY):
                         if cur_tool == ToolType.BRUSH_TOOL or cur_tool == ToolType.ERASER_TOOL:
                             tool_size = game_variables["brush_size"] if cur_tool == ToolType.BRUSH_TOOL else \
                                 game_variables[
                                     "eraser_size"]
-                            send_packet(conn, cur_pos, color, tool_size)
+                            send_packet(conn, "PAINT", pos=cur_pos, color=color, tool_size=tool_size)
                             paint(cur_pos, color, tool_size)
                             clicking = True
                             continue
@@ -469,7 +496,8 @@ def main(msg_queue, conn):
                         for idx, tool in tools.items():
                             if tool.button.hovered:
                                 game_variables["current_tool"] = idx
-                                update_tools(screen)
+                                switch_tool()
+                                draw_sliders(screen)
                                 break
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 3:
@@ -480,7 +508,7 @@ def main(msg_queue, conn):
                     for slider in sliders.values():
                         slider.clicked = False
                         slider.subsurface.set_alpha(255)
-                update_sliders(screen)
+                draw_sliders(screen)
 
             elif event.type == pygame.MOUSEMOTION:
                 if is_within_grid(cursorX, cursorY):
@@ -492,7 +520,7 @@ def main(msg_queue, conn):
                             cur_tool == ToolType.BRUSH_TOOL or cur_tool == ToolType.ERASER_TOOL):
                         tool_size = game_variables["brush_size"] if cur_tool == ToolType.BRUSH_TOOL else game_variables[
                             "eraser_size"]
-                        send_packet(conn, cur_pos, color, tool_size)
+                        send_packet(conn, "PAINT", pos=cur_pos, color=color, tool_size=tool_size)
                         paint(cur_pos, color, tool_size)
                 else:
                     for tool in tools.values():
@@ -516,6 +544,8 @@ def main(msg_queue, conn):
         tool_activate()
         grid.draw(screen)
 
+        draw_tools(screen)
+
         cur_tool = game_variables["current_tool"]
         color = game_variables["current_color"]
 
@@ -529,8 +559,7 @@ def main(msg_queue, conn):
             elif cur_tool == ToolType.EYEDROPPER_TOOL:
                 screen.blit(pygame.transform.scale(tools[cur_tool].icon, (22, 22)), (cursorX, cursorY - 30))
 
-        pygame.draw.rect(screen, (150, 150, 150), (820, 700, SCREEN_WIDTH - 830, SCREEN_HEIGHT - 710))
-        screen.blit(toolbar_font.render(f"Time remaining: {game_variables['timer']}", True, (50, 50, 50)), (820, 700))
+        draw_counter(screen)
 
         pygame.display.update()
 
