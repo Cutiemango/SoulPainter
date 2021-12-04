@@ -57,7 +57,8 @@ def decode_packet(pkt_type, payload):
         name, score = payload.split(",")
         if score == "-1":
             score_dict.pop(name)
-        score_dict[name] = score
+        else:
+            score_dict[name] = score
         update_scoreboard()
     elif pkt_type == "WELCOME":
         enter_game_chat()

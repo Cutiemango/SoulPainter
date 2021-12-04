@@ -55,20 +55,20 @@ def draw_walls(screen):
 
 def draw_current_color(screen):
     color = game_variables["selected_color"]
-    pygame.draw.rect(screen, (235, 235, 235), (905, 700, 40, 40))
-    pygame.draw.rect(screen, color, (910, 705, 30, 30))
+    pygame.draw.rect(screen, (235, 235, 235), (905, 620, 40, 40))
+    pygame.draw.rect(screen, color, (910, 625, 30, 30))
 
 
 def draw_palette(screen):
     hue = sliders["hue"].slide_val
 
-    pygame.draw.rect(screen, (235, 235, 235), (815, 350, 220, 220))
+    pygame.draw.rect(screen, (235, 235, 235), (810, 290, 220, 220))
     palette = display['palette']
 
     for x in range(200):
         for y in range(200):
             palette.set_at((x, y), tuple(int(255 * i) for i in colorsys.hls_to_rgb(hue / 360, 1 - y / 200, x / 200)))
-    screen.blit(palette, (825, 360))
+    screen.blit(palette, (820, 300))
 
 
 class ColorGrid:
@@ -167,7 +167,7 @@ class ColorSlider(Component):
 
         # draw the background surface for slide val
         surface_width = 240
-        pygame.draw.rect(screen, (190, 190, 190), (initX - surface_width // 2, initY - 30, surface_width, 60))
+        pygame.draw.rect(screen, (190, 190, 190), (initX - surface_width // 2, initY - 10, surface_width, 40))
 
         # draw the long bar [==========]
         for i in range(180):
@@ -294,19 +294,19 @@ def paint(pos, color, size):
 def init_variables():
     tools[ToolType.BRUSH_TOOL] = PaintTool(icon_path="brush.png",
                                            bind_key=pygame.K_b,
-                                           button=Button([880, 60], 30, 30, (80, 80, 80)))
+                                           button=Button([830, 60], 30, 30, (80, 80, 80)))
     tools[ToolType.ERASER_TOOL] = PaintTool(icon_path="eraser.png",
                                             bind_key=pygame.K_e,
-                                            button=Button([930, 60], 30, 30, (80, 80, 80)))
+                                            button=Button([880, 60], 30, 30, (80, 80, 80)))
     tools[ToolType.FILL_TOOL] = PaintTool(icon_path="fill.png",
                                           bind_key=pygame.K_f,
-                                          button=Button([880, 110], 30, 30, (80, 80, 80)))
+                                          button=Button([930, 60], 30, 30, (80, 80, 80)))
     tools[ToolType.EYEDROPPER_TOOL] = PaintTool(icon_path="eyedropper.png",
                                                 bind_key=pygame.K_i,
-                                                button=Button([930, 110], 30, 30, (80, 80, 80)))
+                                                button=Button([980, 60], 30, 30, (80, 80, 80)))
 
-    sliders["brush"] = Slider([925, 240], 15, 20, (240, 240, 240), (1, 5), "Brush Size", 18, (0, 0, 0))
-    sliders["hue"] = ColorSlider([925, 630], 15, 20, (240, 240, 240), (0, 360))
+    sliders["brush"] = Slider([920, 190], 15, 20, (240, 240, 240), (1, 5), "Brush Size", 18, (0, 0, 0))
+    sliders["hue"] = ColorSlider([920, 560], 15, 20, (240, 240, 240), (0, 360))
 
     display["grid"] = ColorGrid([0, 0], 64, 12, (255, 255, 255))
     display['palette'] = pygame.Surface((200, 200))
@@ -357,7 +357,7 @@ def start_counter():
 
 def draw_tools(screen):
     tool_activate()
-    pygame.draw.rect(screen, (180, 180, 180), (860, 50, 120, 100))
+    pygame.draw.rect(screen, (180, 180, 180), (800, 50, 240, 50))
     for idx, tool in tools.items():
         button = tool.button
         button.clicked = (game_variables["current_tool"] == idx)
@@ -390,9 +390,9 @@ def draw_toolbar(screen):
     screen.blit(toolbar_font.render("Tools", True, (50, 50, 50)), (780, 20))
     draw_tools(screen)
 
-    screen.blit(toolbar_font.render("Size Settings", True, (50, 50, 50)), (780, 170))
+    screen.blit(toolbar_font.render("Size Settings", True, (50, 50, 50)), (780, 120))
     draw_sliders(screen)
-    screen.blit(toolbar_font.render("Colors", True, (50, 50, 50)), (780, 300))
+    screen.blit(toolbar_font.render("Colors", True, (50, 50, 50)), (780, 250))
 
 
 def main(msg_queue, conn):
@@ -478,7 +478,7 @@ def main(msg_queue, conn):
                             game_variables["selected_color"] = cursor_color
                     else:
                         palette = display["palette"]
-                        px, py = 825, 360
+                        px, py = 820, 300
                         if px <= cursorX <= px + 200 and py <= cursorY <= py + 200:
                             game_variables["selected_color"] = palette.get_at((cursorX - px, cursorY - py))
                             draw_current_color(screen)
@@ -560,6 +560,7 @@ def main(msg_queue, conn):
                 screen.blit(pygame.transform.scale(tools[cur_tool].icon, (22, 22)), (cursorX, cursorY - 30))
 
         draw_counter(screen)
+        draw_current_color(screen)
 
         pygame.display.update()
 

@@ -5,7 +5,7 @@ import time
 import random
 from queue import Queue
 
-HOST = '127.0.0.1'
+HOST = '0.0.0.0'
 PORT = 48763
 
 questions = ["蘋果", "柳橙", "芒果", "西瓜", "奇異果", "芭樂", "香蕉", "番茄", "檸檬", "哈密瓜", "水蜜桃", "李子", "楊桃"]
@@ -122,8 +122,7 @@ class GameServer:
         upd = threading.Thread(target=new_player.update_palette, args=[self.operation_history])
         upd.start()
 
-    def player_disconnect(self, conn):
-        addr = conn.getpeername()
+    def player_disconnect(self, addr):
         player_name = self.connected_players[addr].name
         print(f"[GameServer] {player_name} ({addr}) has left the game")
 
@@ -152,6 +151,8 @@ class GameServer:
         self.paint_queue.put(self.painting_player)
         self.painting_player = None
         for player in self.connected_players.values():
+            if self.painting_answer != "":
+                player.send_game_message("INFO", f"正確答案是：「{self.painting_answer}」")
             player.clear_palette()
             player.set_timer("Take a break", 5)
         self.counter.count("break")
@@ -201,10 +202,7 @@ class GameServer:
                 player.send_player_message(f"{sender.name}: {payload}")
 
     def skip_painter(self):
-        print(f"[GameServer] Painter skipped")
         self.painting_player = None
-        self.operation_history = []
-        self.guessed = set()
         for player in self.connected_players.values():
             player.clear_palette()
             player.set_timer("Take a break", 5)
@@ -225,6 +223,8 @@ class GameServer:
             self.game_running = False
 
     def next_turn(self, cur_player):
+        self.operation_history = []
+        self.guessed = set()
         for player in self.connected_players.values():
             if not self.game_running:
                 player.send_game_message("INFO", f"[系統] 遊戲開始！")
@@ -235,7 +235,7 @@ class GameServer:
         self.painting_answer = random.sample(questions, 1)[0]
         self.painting_player = cur_player
         cur_player.get_turn()
-        cur_player.send_game_message("INFO", F"[系統] 請畫出「{self.painting_answer}」")
+        cur_player.send_game_message("INFO", f"[系統] 請畫出「{self.painting_answer}」")
         self.counter.count("turn")
 
 
@@ -280,8 +280,7 @@ def send_packet(conn, channel, msg):
     conn.sendall(f"{channel},{msg}@".encode())
 
 
-def read_data_from_client(conn, game_server):
-    addr = conn.getpeername()
+def read_data_from_client(conn, addr, game_server):
     try:
         msg = str(conn.recv(4096), encoding='utf-8')
         if msg:
@@ -295,13 +294,13 @@ def read_data_from_client(conn, game_server):
                     game_server.decode_packet(conn, channel, pkt_type, payload)
                 else:
                     game_server.decode_packet(conn, channel, None, channel_pkt)
-            return
+        else:
+            game_server.player_disconnect(addr)
+            selector.unregister(conn)
+            conn.close()
     except ConnectionError:
+        print(f"[Server] Lost connection to {addr}")
         pass
-    game_server.player_disconnect(conn)
-    selector.unregister(conn)
-    conn.close()
-    print(f"[Server] Lost connection to {addr}")
 
 
 def accept(server, game_server):
@@ -310,7 +309,7 @@ def accept(server, game_server):
 
     print(f"[Server] Server is connected to {addr}")
 
-    selector.register(conn, selectors.EVENT_READ, read_data_from_client)
+    selector.register(conn, selectors.EVENT_READ, (read_data_from_client, addr))
 
 
 def main():
@@ -324,13 +323,17 @@ def main():
 
     game_server = GameServer()
 
-    selector.register(server, selectors.EVENT_READ, accept)
+    selector.register(server, selectors.EVENT_READ, (accept,))
 
     while running:
         for key, mask in selector.select():
-            callback = key.data
+            data = key.data
+            callback = data[0]
             client_socket = key.fileobj
-            callback(client_socket, game_server)
+            if len(data) > 1:
+                callback(client_socket, data[1], game_server)
+            else:
+                callback(client_socket, game_server)
 
     print(f"[Server] Server is shutting down...")
 
