@@ -1,12 +1,16 @@
 import socket
 import threading
 import game
+import re
 import tkinter as tk
 from queue import Queue
 
 APP_WIDTH, APP_HEIGHT = 400, 770
 CHAT_FONT = ("微軟正黑體", 12)
 GLOBAL_FONT = ("Consolas", 16)
+IP_REGEX = r"\d{1,3}(\.\d{1,3}){3}"
+PORT_REGEX = r"\d{4,5}"
+NAME_REGEX = r"[a-zA-Z0-9_]+"
 
 app = tk.Tk()
 client: socket.socket = None
@@ -18,6 +22,7 @@ connect_parameters = {
 game_msg_queue = Queue()
 
 tk_elements = {}
+has_focus = {}
 score_dict = {}
 
 
@@ -72,10 +77,11 @@ def update_scoreboard():
     box = tk_elements["scoreboard"]
     insert_message(box, "", True)
     box.config(state=tk.NORMAL)
-    box.insert(tk.END, f"Name           Score\n")
+    box.insert(tk.END, f"Name" + " " * max(15 - len("Name"), 1) + "Score\n")
     for name, score in sorted(score_dict.items(), key=lambda x: (-int(x[1]), x[0])):
         line = name
         line += " " * max(15 - len(name), 1)
+        line += " " * max(5 - len(str(score)), 1)
         line += score
         box.insert(tk.END, line + "\n")
     box.config(state=tk.DISABLED)
@@ -107,8 +113,20 @@ def app_close():
 
 
 def set_connect_params(key, val):
-    connect_parameters[key] = val
-    print(f"[Client] Connect param {key} has been set to {val}")
+    if has_focus[key]:
+        connect_parameters[key] = val
+        print(f"[Client] Connect param {key} has been set to {val}")
+
+
+def check_connect_params():
+    errors = []
+    if not re.fullmatch(IP_REGEX, connect_parameters["host"]):
+        errors.append("Invalid ip address. Please check your input.")
+    if not re.fullmatch(PORT_REGEX, connect_parameters["port"]):
+        errors.append("Invalid port. Please check your input.")
+    if not re.fullmatch(NAME_REGEX, connect_parameters["name"]):
+        errors.append("Name can only contain english letters, numbers and underscores.")
+    return errors
 
 
 def threaded_game_client():
@@ -119,6 +137,12 @@ def threaded_game_client():
 
 
 def connect():
+    errors = check_connect_params()
+    if len(errors) > 0:
+        insert_message(tk_elements["response_message"], "", True)
+        for error in errors:
+            insert_message(tk_elements["response_message"], error + "\n")
+        return
     host = connect_parameters["host"]
     port = int(connect_parameters["port"])
     global client
@@ -154,6 +178,10 @@ def enter_lobby():
     tk_elements["lobby_frame"].pack_propagate(0)
 
 
+def set_focus(widget, focus):
+    has_focus[widget] = focus
+
+
 def main():
     app.title("SoulPainter Chat Client")
     app.geometry("%dx%d" % (APP_WIDTH, APP_HEIGHT))
@@ -184,8 +212,9 @@ def main():
                         font=GLOBAL_FONT)
     ip_entry.pack(side=tk.TOP, pady=(10, 0))
     ip_entry.insert(tk.END, f"{connect_parameters['host']}")
-    ip_entry.bind('<FocusOut>', lambda event: set_connect_params('host', event.widget.get()))
-    ip_entry.bind('<Return>', lambda event: set_connect_params('host', event.widget.get()))
+    ip_entry.bind('<FocusIn>', lambda event: set_focus('host', True))
+    ip_entry.bind('<FocusOut>', lambda event: set_focus('host', False))
+    ip_entry.bind("<KeyRelease>", lambda event: set_connect_params('host', event.widget.get()))
 
     port_label = tk.Label(lobby_frame, font=("Consolas", 16), text="Port")
     port_label.pack(side=tk.TOP, pady=(50, 0))
@@ -196,8 +225,9 @@ def main():
                           font=GLOBAL_FONT)
     port_entry.pack(side=tk.TOP, pady=(10, 0))
     port_entry.insert(tk.END, f"{connect_parameters['port']}")
-    port_entry.bind('<FocusOut>', lambda event: set_connect_params('port', event.widget.get()))
-    port_entry.bind('<Return>', lambda event: set_connect_params('port', event.widget.get()))
+    port_entry.bind('<FocusIn>', lambda event: set_focus('port', True))
+    port_entry.bind('<FocusOut>', lambda event: set_focus('port', False))
+    port_entry.bind("<KeyRelease>", lambda event: set_connect_params('port', event.widget.get()))
 
     name_label = tk.Label(lobby_frame, font=("Consolas", 16), text="Nickname")
     name_label.pack(side=tk.TOP, pady=(50, 0))
@@ -208,8 +238,9 @@ def main():
                           font=GLOBAL_FONT)
     name_entry.pack(side=tk.TOP, pady=(10, 0))
     name_entry.insert(tk.END, f"{connect_parameters['name']}")
-    name_entry.bind('<FocusOut>', lambda event: set_connect_params('name', event.widget.get()))
-    name_entry.bind('<Return>', lambda event: set_connect_params('name', event.widget.get()))
+    name_entry.bind('<FocusIn>', lambda event: set_focus('name', True))
+    name_entry.bind('<FocusOut>', lambda event: set_focus('name', False))
+    name_entry.bind("<KeyRelease>", lambda event: set_connect_params('name', event.widget.get()))
 
     connect_btn = tk.Button(lobby_frame,
                             font=GLOBAL_FONT,

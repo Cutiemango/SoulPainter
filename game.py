@@ -1,6 +1,5 @@
 import pygame
 import colorsys
-import sys
 from queue import Queue
 from enum import IntEnum
 
@@ -133,6 +132,7 @@ class Slider(Component):
         self.font = pygame.font.SysFont("Consolas", font_size)
         self.text_render = self.font.render(text, True, font_color)
         self.val_render = self.font.render(str(self.slide_val), True, (30, 30, 30))
+        self.slide_bar = pygame.Surface((180, self.height // 2))
 
     def draw(self, screen):
         initX, initY = self.init_pos
@@ -152,6 +152,9 @@ class Slider(Component):
         screen.blit(self.val_render, (initX - 105, initY + 3))
         screen.blit(self.text_render, (initX - 110, initY - 25))
         super().draw(screen)
+    
+    
+
 
 
 class ColorSlider(Component):
@@ -460,6 +463,8 @@ def main(msg_queue, conn):
                     switch_tool()
                     draw_sliders(screen)
                 elif event.button == 1:  # left click
+
+                    # Drawing in grid
                     if is_within_grid(cursorX, cursorY):
                         if cur_tool == ToolType.BRUSH_TOOL or cur_tool == ToolType.ERASER_TOOL:
                             tool_size = game_variables["brush_size"] if cur_tool == ToolType.BRUSH_TOOL else \
@@ -476,20 +481,26 @@ def main(msg_queue, conn):
                             fill((gridX, gridY), cursor_color, color)
                         elif cur_tool == ToolType.EYEDROPPER_TOOL:
                             game_variables["selected_color"] = cursor_color
+
+                    # Mouse down out of grid
                     else:
                         palette = display["palette"]
                         px, py = 820, 300
                         if px <= cursorX <= px + 200 and py <= cursorY <= py + 200:
                             game_variables["selected_color"] = palette.get_at((cursorX - px, cursorY - py))
-                            draw_current_color(screen)
                             continue
 
-                        for slider in sliders.values():
-                            top_left = (slider.pos[0], slider.pos[1])
-                            if slider.subsurface.get_rect(topleft=top_left).collidepoint((cursorX, cursorY)):
+                        for name, slider in sliders.items():
+                            top_left = (slider.init_pos[0] - 190 // 2 + 15, slider.init_pos[1] + slider.height // 4)
+                            
+                            if slider.slide_bar.get_rect(topleft=top_left).collidepoint((cursorX, cursorY)):
                                 slider.clicked = True
                                 slider.subsurface.set_alpha(100)
+                                slider.pos[0] = max(slider.init_pos[0] - 87, min(cursorX - 7, slider.init_pos[0] + 92))
                                 slider.draw(screen)
+
+                                if name == "hue":
+                                    draw_palette(screen)
                             else:
                                 slider.clicked = False
 
@@ -499,6 +510,7 @@ def main(msg_queue, conn):
                                 switch_tool()
                                 draw_sliders(screen)
                                 break
+
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 3:
                     game_variables["current_tool"] = game_variables["previous_tool"]
@@ -531,6 +543,9 @@ def main(msg_queue, conn):
                             button.hovered = False
                     for name, slider in sliders.items():
                         if slider.clicked:
+                            slider.pos[0] = max(slider.init_pos[0] - 87, min(cursorX - 7, slider.init_pos[0] + 92))
+                            slider.draw(screen)
+
                             if name == "brush":
                                 if game_variables["current_tool"] == ToolType.BRUSH_TOOL:
                                     game_variables["brush_size"] = slider.slide_val
@@ -538,8 +553,6 @@ def main(msg_queue, conn):
                                     game_variables["eraser_size"] = slider.slide_val
                             elif name == "hue":
                                 draw_palette(screen)
-                            slider.pos[0] = max(slider.init_pos[0] - 80, min(cursorX, slider.init_pos[0] + 90))
-                            slider.draw(screen)
 
         tool_activate()
         grid.draw(screen)

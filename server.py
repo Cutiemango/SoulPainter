@@ -103,7 +103,7 @@ class GameServer:
         new_player = Player(conn, name)
         self.connected_players[addr] = new_player
         self.scoreboard[addr] = 0
-        self.add_to_paint_queue(new_player)
+        self.paint_queue.put(self.painting_player)
 
         print(f"[GameServer] {new_player.name} ({addr}) has joined the game")
 
@@ -138,24 +138,6 @@ class GameServer:
 
         if is_painter:
             self.skip_painter()
-
-    def query_palette(self):
-        if self.painting_player is not None:
-            self.painting_player.send_grid_query()
-
-    def add_to_paint_queue(self, player):
-        self.paint_queue.put(player)
-
-    def turn_expired(self):
-        self.painting_player.lock_palette()
-        self.paint_queue.put(self.painting_player)
-        self.painting_player = None
-        for player in self.connected_players.values():
-            if self.painting_answer != "":
-                player.send_game_message("INFO", f"正確答案是：「{self.painting_answer}」")
-            player.clear_palette()
-            player.set_timer("Take a break", 5)
-        self.counter.count("break")
 
     def decode_packet(self, sender_conn, channel, pkt_type, payload):
         addr = sender_conn.getpeername()
@@ -202,8 +184,20 @@ class GameServer:
                 player.send_player_message(f"{sender.name}: {payload}")
 
     def skip_painter(self):
+        self.operation_history = []
         self.painting_player = None
         for player in self.connected_players.values():
+            player.clear_palette()
+            player.set_timer("Take a break", 5)
+        self.counter.count("break")
+
+    def turn_expired(self):
+        self.painting_player.lock_palette()
+        self.paint_queue.put(self.painting_player)
+        self.painting_player = None
+        for player in self.connected_players.values():
+            if self.painting_answer != "":
+                player.send_game_message("INFO", f"[系統] 正確答案是：「{self.painting_answer}」")
             player.clear_palette()
             player.set_timer("Take a break", 5)
         self.counter.count("break")
