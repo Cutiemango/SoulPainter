@@ -103,7 +103,7 @@ class GameServer:
         new_player = Player(conn, name)
         self.connected_players[addr] = new_player
         self.scoreboard[addr] = 0
-        self.paint_queue.put(self.painting_player)
+        self.paint_queue.put(new_player)
 
         print(f"[GameServer] {new_player.name} ({addr}) has joined the game")
 
